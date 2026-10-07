@@ -5,6 +5,7 @@ const formProducto = document.getElementById("formProducto");
 const tablaProductos = document.getElementById("tablaProductos");
 const totalProductos = document.getElementById("totalProductos");
 
+
 // 1. Función para Cargar Productos (GET)
 async function cargarProductos() {
     try {
@@ -24,14 +25,12 @@ async function cargarProductos() {
             return;
         }
 
-        
-
         productos.forEach(p => {
             const fila = document.createElement("tr");
             fila.innerHTML = `
                 <td class="fw-bold text-secondary">#${p.id}</td>
                 <td>${p.nombre}</td>
-                <td class="text-success fw-bold">$${p.precio.toFixed(2)}</td>
+                <td class="text-success fw-bold">$${Number(p.precio).toFixed(2)}</td>
                 <td>
                     <span class="badge ${p.cantidad < 10 ? 'bg-danger' : 'bg-success'}">
                         ${p.cantidad} unidades
@@ -48,9 +47,67 @@ async function cargarProductos() {
 
     } catch (error) {
         console.error("Error al cargar productos:", error);
+        tablaProductos.innerHTML = `
+            <tr>
+                <td colspan="5" class="text-center text-danger py-4">
+                    No se pudo conectar con la API.
+                </td>
+            </tr>`;
+    }
+}
+
+
+// 2. Función para Agregar Producto (POST)
+async function agregarProducto(event){
+    event.preventDefault();
+
+    var nombre = document.getElementById("nombre").value;
+    var precio = document.getElementById("precio").value;
+    var cantidad = document.getElementById("cantidad").value;
+
+    const nuevoContenido = {nombre, precio, cantidad};
+
+    try {
+        const respuesta = await fetch(API_URL, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(nuevoContenido)
+        });
+
+        if(respuesta.ok){
+            formProducto.reset();
+            await cargarProductos();
+        } else {
+            console.error("Hubo algo malo al guardar");
+        }
+    } catch (error) {
+        console.log(error);
+    }
+}
+
+
+// 3. Función para Eliminar Producto (DELETE)
+async function eliminarProducto(id_producto){
+    try {
+        const respuesta = await fetch(API_URL + "/" + id_producto, {
+            method: "DELETE",
+            headers: {"Content-Type": "application/json"}
+        });
+
+        if(respuesta.ok){
+            await cargarProductos();
+        } else {
+            console.error("Hubo algo malo al eliminar");
+        }
+    } catch (error) {
+        console.log(error);
     }
 }
 
 
 // Cargar catálogo al abrir la página
 document.addEventListener("DOMContentLoaded", cargarProductos);
+
+
+// Agregamos el evento para que se ejecute la función al dar clic en guardar producto
+formProducto.addEventListener("submit", agregarProducto);
