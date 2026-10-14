@@ -1,11 +1,39 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio  # Se usa para el await asyncio.sleep(0)
+from fastapi.responses import JSONResponse
+from collections import deque
+import time
+
 
 # Creación de la aplicación FastAPI
 app = FastAPI()
 
-# Permite peticiones desde cualquier origen (útil para pruebas)
+# Máximo 5 peticiones por segundo con MIDDLEWARE ASYNCIO
+MAX_PETICIONES = 5
+VENTANA = 1.0                     # segundos
+peticiones = deque()              # timestamps de las últimas peticiones
+lock = asyncio.Lock()             # evita condiciones de carrera
+
+@app.middleware("http")
+async def rate_limit(request: Request, call_next):
+    async with lock:
+        ahora = time.monotonic()
+        # Descartamos los timestamps fuera de la ventana de 1 segundo
+        while peticiones and ahora - peticiones[0] > VENTANA:
+            peticiones.popleft()
+        # Si ya hay 5 en el último segundo, rechazamos
+        if len(peticiones) >= MAX_PETICIONES:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Demasiadas peticiones. Máximo 5 por segundo."}
+            )
+        peticiones.append(ahora)
+    # Si pasa el filtro, seguimos con la petición normal
+    return await call_next(request)
+
+
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
