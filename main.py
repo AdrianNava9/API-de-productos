@@ -12,6 +12,8 @@ app = FastAPI(title="API Proyecto Tiendita", version="1.0.0")
 
 
 # ─── Máximo 5 peticiones por segundo con MIDDLEWARE ASYNCIO ─────────
+# NOTA: Middleware comentado temporalmente para permitir las pruebas de concurrencia (Locust) sin interferencia del rate limit.
+"""
 MAX_PETICIONES = 5
 VENTANA = 1.0                     # segundos
 peticiones = deque()              # timestamps de las últimas peticiones
@@ -33,6 +35,7 @@ async def rate_limit(request: Request, call_next):
         peticiones.append(ahora)
     # Si pasa el filtro, seguimos con la petición normal
     return await call_next(request)
+"""
 
 
 # ─── CORS ───────────────────────────────────────────────────────────
@@ -69,7 +72,7 @@ class respuestaProducto(BaseModel):
 inventario = [
     {"id": 1,  "nombre": "Coca-Cola",   "precio": 20, "cantidad": 25},
     {"id": 2,  "nombre": "Papas",       "precio": 15, "cantidad": 40},
-    {"id": 3,  "nombre": "Café",        "precio": 18, "cantidad": 15},
+    {"id": 3,  "nombre": "Café",        "precio": 18, "cantidad": 1},  # Crítico 1 (Ajustado para el experimento)
     {"id": 4,  "nombre": "Galletas",    "precio": 12, "cantidad": 30},
     {"id": 5,  "nombre": "Agua 1L",     "precio": 10, "cantidad": 50},
     {"id": 6,  "nombre": "Chocolate",   "precio": 22, "cantidad": 20},
