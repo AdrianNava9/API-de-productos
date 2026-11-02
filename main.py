@@ -142,24 +142,23 @@ async def deleteProducto(producto_id: int):
 # ─── Endpoint POST /productos/{producto_id} (comprar) ───────────────
 @app.post("/productos/{producto_id}")
 async def comprarProducto(producto_id: int):
-    # EXPERIMENTO A: Línea comentada deliberadamente para provocar la condición de carrera
-    # async with lock_stock:
-    
-    # Busca el producto por ID (Nota: el bloque perdió un nivel de indentación)
-    for objeto in inventario:
-        if objeto["id"] == producto_id:
-            # Verifica que haya stock disponible
-            if objeto["cantidad"] > 0:
-                await asyncio.sleep(0.05)  # simula el tiempo de procesamiento
-                objeto["cantidad"] -= 1
-                return {"Mensaje": "Producto comprado"}
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="No hay stock de ese producto"
-                )
+    # EXPERIMENTO B: Línea restaurada para blindar la API contra condiciones de carrera
+    async with lock_stock:
+        # Busca el producto por ID
+        for objeto in inventario:
+            if objeto["id"] == producto_id:
+                # Verifica que haya stock disponible
+                if objeto["cantidad"] > 0:
+                    await asyncio.sleep(0.05)  # simula el tiempo de procesamiento
+                    objeto["cantidad"] -= 1
+                    return {"Mensaje": "Producto comprado"}
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="No hay stock de ese producto"
+                    )
 
-    raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail="No existe el ID de ese producto"
-    )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No existe el ID de ese producto"
+        )
