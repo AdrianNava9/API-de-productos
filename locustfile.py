@@ -16,15 +16,18 @@ class UsuarioTienditaCompleto(HttpUser):
     def comprarProducto(self):
         """
         Tarea prioritaria (peso 10): POST /productos/3
-        catch_response=True evita registrar el agotamiento de stock (400)
-        como una falla del sistema.
+        Usamos request_meta para separar los 200 de los 400 en la tabla de estadísticas.
         """
-        with self.client.post("/productos/3", catch_response=True, name="POST /productos/3 (Comprar)") as response:
+        # Quitamos el 'name' fijo de aquí para poder asignarlo dinámicamente después
+        with self.client.post("/productos/3", catch_response=True) as response:
             if response.status_code == 200:
                 response.success()
+                # Si la compra fue exitosa, la agrupamos bajo este nombre
+                response.request_meta["name"] = "POST /productos/3 (Compra Exitosa)"
             elif response.status_code == 400:
-                # 400 es esperado cuando ya no hay stock
                 response.success()
+                # Si no había stock, la agrupamos bajo este otro nombre
+                response.request_meta["name"] = "POST /productos/3 (Sin Stock)"
             else:
                 response.failure(f"Fallo inesperado: {response.status_code}")
 
@@ -49,10 +52,6 @@ class UsuarioTienditaCompleto(HttpUser):
         self.client.post("/productos", json=nuevo, name="POST /productos")
 
     # ─── TAREA ELIMINADA PARA PROTEGER EL INVENTARIO ───
-    # Se comenta la tarea de eliminación para evitar que el producto crítico (Café ID 3)
-    # o cualquier otro producto sea borrado por azar durante las pruebas de concurrencia.
-    
     # @task(1)
     # def eliminar_producto(self):
-    #     # Tarea DELETE /productos/{id} — (peso 1)
     #     self.client.delete("/productos/1", name="DELETE /productos/{id}")
