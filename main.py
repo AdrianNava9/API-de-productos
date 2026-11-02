@@ -1,15 +1,17 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio  # Se usa para el await asyncio.sleep(0)
 from fastapi.responses import JSONResponse
 from collections import deque
 import time
+from pydantic import BaseModel, Field
 
 
-# Creación de la aplicación FastAPI
-app = FastAPI()
+# ─── Creación de la aplicación FastAPI ──────────────────────────────
+app = FastAPI(title="API Proyecto Tiendita", version="1.0.0")
 
-# Máximo 5 peticiones por segundo con MIDDLEWARE ASYNCIO
+
+# ─── Máximo 5 peticiones por segundo con MIDDLEWARE ASYNCIO ─────────
 MAX_PETICIONES = 5
 VENTANA = 1.0                     # segundos
 peticiones = deque()              # timestamps de las últimas peticiones
@@ -33,7 +35,7 @@ async def rate_limit(request: Request, call_next):
     return await call_next(request)
 
 
-# CORS
+# ─── CORS ───────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -42,7 +44,28 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-# Datos de ejemplo (inventario en memoria) 
+
+# ─── Lock para operaciones de compra (evita condición de carrera en el stock) ─
+lock_stock = asyncio.Lock()
+
+
+# ─── Modelos Pydantic ───────────────────────────────────────────────
+# Estructura obligatoria del cuerpo al crear un producto
+class crearProducto(BaseModel):
+    nombre: str = Field(..., min_length=1, description="Nombre del producto")
+    precio: float = Field(..., gt=0, description="Precio del producto")
+    cantidad: int = Field(..., ge=0, description="stock del producto")
+
+
+# Estructura de la respuesta que devuelve la API al consultar/crear un producto
+class respuestaProducto(BaseModel):
+    id: int
+    nombre: str
+    precio: float
+    cantidad: int
+
+
+# ─── Datos de ejemplo (inventario en memoria) ───────────────────────
 inventario = [
     {"id": 1,  "nombre": "Coca-Cola",   "precio": 20, "cantidad": 25},
     {"id": 2,  "nombre": "Papas",       "precio": 15, "cantidad": 40},
@@ -53,46 +76,50 @@ inventario = [
     {"id": 7,  "nombre": "Jugo de naranja", "precio": 25, "cantidad": 8},
     {"id": 8,  "nombre": "Pan blanco",  "precio": 35, "cantidad": 12},
     {"id": 9,  "nombre": "Yogurt",      "precio": 14, "cantidad": 6},
-    {"id": 10, "nombre": "Monster",    "precio": 40, "cantidad": 45}
+    {"id": 10, "nombre": "Monster",     "precio": 40, "cantidad": 45}
 ]
 
-# Endpoint raíz
+
+# ─── Endpoint raíz ──────────────────────────────────────────────────
 @app.get("/")
 def home():
     return {"Message": "Hola bienvenido"}
 
-# Endpoint GET /productos 
+
+# ─── Endpoint GET /productos ────────────────────────────────────────
 @app.get("/productos")
 async def getProductos():
-    # Cede el control al event loop 
+    # Cede el control al event loop
     await asyncio.sleep(0)
     # Devuelve la lista completa del inventario
     return inventario
 
-# Endpoint POST /productos 
-@app.post("/productos")
-async def addProducto(producto: dict):
-    # Cede el control al event loop 
+
+# ─── Endpoint POST /productos (crear) ───────────────────────────────
+@app.post("/productos", response_model=respuestaProducto, status_code=status.HTTP_201_CREATED)
+async def addProducto(producto: crearProducto):
+    # Cede el control al event loop
     await asyncio.sleep(0)
 
     # Calcula el nuevo ID como el máximo existente + 1
     nuevo_id = max((p["id"] for p in inventario), default=0) + 1
 
-    # Construye el nuevo producto
+    # Construye el nuevo producto (los campos vienen validados por Pydantic)
     nuevo_producto = {
         "id": nuevo_id,
-        "nombre": producto["nombre"],
-        "precio": producto["precio"],
-        "cantidad": producto["cantidad"]
+        "nombre": producto.nombre,
+        "precio": producto.precio,
+        "cantidad": producto.cantidad
     }
 
     # Agrega el producto al inventario
     inventario.append(nuevo_producto)
 
-    # Devuelve el inventario actualizado
-    return inventario
+    # Devuelve el producto recién creado
+    return nuevo_producto
 
-# Endpoint DELETE /productos/{producto_id} 
+
+# ─── Endpoint DELETE /productos/{producto_id} ───────────────────────
 @app.delete("/productos/{producto_id}")
 async def deleteProducto(producto_id: int):
     # Cede el control al event loop (simbólico)
@@ -107,3 +134,28 @@ async def deleteProducto(producto_id: int):
 
     # Si no lo encuentra, responde con mensaje de error
     return {"Message": "No fue encontrado el producto"}
+
+
+# ─── Endpoint POST /productos/{producto_id} (comprar) ───────────────
+@app.post("/productos/{producto_id}")
+async def comprarProducto(producto_id: int):
+    # Serializa las compras para evitar condiciones de carrera en el stock
+    async with lock_stock:
+        # Busca el producto por ID
+        for objeto in inventario:
+            if objeto["id"] == producto_id:
+                # Verifica que haya stock disponible
+                if objeto["cantidad"] > 0:
+                    await asyncio.sleep(0.05)  # simula el tiempo de procesamiento
+                    objeto["cantidad"] -= 1
+                    return {"Mensaje": "Producto comprado"}
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="No hay stock de ese producto"
+                    )
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No existe el ID de ese producto"
+        )

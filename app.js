@@ -6,10 +6,79 @@ const tablaProductos = document.getElementById("tablaProductos");
 const totalProductos = document.getElementById("totalProductos");
 
 
+// 0. Helper: muestra avisos flotantes sin romper la página
+function mostrarAviso(mensaje, tipo = "warning") {
+    // Crea el contenedor de avisos si no existe todavía
+    let contenedor = document.getElementById("avisosContainer");
+    if (!contenedor) {
+        contenedor = document.createElement("div");
+        contenedor.id = "avisosContainer";
+        contenedor.style.cssText =
+            "position:fixed;top:20px;right:20px;z-index:9999;" +
+            "display:flex;flex-direction:column;gap:8px;max-width:340px;";
+        document.body.appendChild(contenedor);
+    }
+
+    // Evita apilar avisos idénticos (por ejemplo, en clics rápidos)
+    for (const existente of contenedor.children) {
+        if (existente.dataset.mensaje === mensaje && existente.dataset.tipo === tipo) {
+            return;
+        }
+    }
+
+    // Limita a 4 avisos visibles simultáneamente
+    while (contenedor.children.length >= 4) {
+        contenedor.firstChild.remove();
+    }
+
+    // Crea el aviso y lo agrega al contenedor
+    const aviso = document.createElement("div");
+    aviso.className = `alert alert-${tipo} shadow-sm mb-0 d-flex align-items-center`;
+    aviso.setAttribute("role", "alert");
+    aviso.dataset.mensaje = mensaje;
+    aviso.dataset.tipo = tipo;
+    aviso.innerHTML = `<i class="bi bi-info-circle me-2"></i><span>${mensaje}</span>`;
+    contenedor.appendChild(aviso);
+
+    // Lo desvanece y elimina después de unos segundos
+    const duracion = tipo === "success" ? 2500 : 4000;
+    setTimeout(() => {
+        aviso.style.transition = "opacity 0.4s";
+        aviso.style.opacity = "0";
+        setTimeout(() => aviso.remove(), 400);
+    }, duracion);
+}
+
+
 // 1. Función para Cargar Productos (GET)
 async function cargarProductos() {
     try {
         const respuesta = await fetch(API_URL);
+
+        // Si el servidor respondió con error (429, 500, etc.),
+        // NO destruimos la tabla: solo mostramos un aviso.
+        if (!respuesta.ok) {
+            if (respuesta.status === 429) {
+                mostrarAviso("Demasiadas peticiones. Espera un momento antes de continuar.", "warning");
+            } else {
+                mostrarAviso(`Error ${respuesta.status} al cargar productos.`, "danger");
+            }
+
+            // Si la tabla está vacía (falló la primera carga), ofrecemos reintentar
+            if (tablaProductos.children.length === 0) {
+                tablaProductos.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="text-center py-4">
+                            <span class="text-muted">No se pudieron cargar los productos.</span><br>
+                            <button class="btn btn-outline-primary btn-sm mt-2" onclick="cargarProductos()">
+                                <i class="bi bi-arrow-clockwise"></i> Reintentar
+                            </button>
+                        </td>
+                    </tr>`;
+            }
+            return false;
+        }
+
         const productos = await respuesta.json();
 
         tablaProductos.innerHTML = "";
@@ -22,7 +91,7 @@ async function cargarProductos() {
                         No hay productos registrados en la tiendita.
                     </td>
                 </tr>`;
-            return;
+            return true;
         }
 
         productos.forEach(p => {
@@ -37,6 +106,9 @@ async function cargarProductos() {
                     </span>
                 </td>
                 <td class="text-end">
+                    <button class="btn btn-outline-success btn-sm me-1" onclick="comprarProducto(${p.id})">
+                        <i class="bi bi-cart"></i> Comprar
+                    </button>
                     <button class="btn btn-outline-danger btn-sm" onclick="eliminarProducto(${p.id})">
                         <i class="bi bi-trash"></i> Eliminar
                     </button>
@@ -45,14 +117,26 @@ async function cargarProductos() {
             tablaProductos.appendChild(fila);
         });
 
+        return true;
+
     } catch (error) {
+        // Error de red real (servidor caído, sin conexión, etc.)
         console.error("Error al cargar productos:", error);
-        tablaProductos.innerHTML = `
-            <tr>
-                <td colspan="5" class="text-center text-danger py-4">
-                    No se pudo conectar con la API.
-                </td>
-            </tr>`;
+        mostrarAviso("No se pudo conectar con la API.", "danger");
+
+        // Solo mostramos reintento si la tabla quedó vacía (carga inicial fallida)
+        if (tablaProductos.children.length === 0) {
+            tablaProductos.innerHTML = `
+                <tr>
+                    <td colspan="5" class="text-center py-4">
+                        <span class="text-danger">No se pudo conectar con la API.</span><br>
+                        <button class="btn btn-outline-primary btn-sm mt-2" onclick="cargarProductos()">
+                            <i class="bi bi-arrow-clockwise"></i> Reintentar
+                        </button>
+                    </td>
+                </tr>`;
+        }
+        return false;
     }
 }
 
@@ -76,12 +160,23 @@ async function agregarProducto(event){
 
         if(respuesta.ok){
             formProducto.reset();
-            await cargarProductos();
+            const refrescoOk = await cargarProductos();
+            if (refrescoOk) {
+                mostrarAviso("Producto guardado correctamente.", "success");
+            } else {
+                mostrarAviso("Producto guardado, pero no se pudo actualizar la lista.", "info");
+            }
         } else {
-            console.error("Hubo algo malo al guardar");
+            const data = await respuesta.json().catch(() => ({}));
+            if (respuesta.status === 429) {
+                mostrarAviso("Demasiadas peticiones. Espera un momento antes de continuar.", "warning");
+            } else {
+                mostrarAviso("No se pudo guardar: " + (data.detail || "error desconocido"), "danger");
+            }
         }
     } catch (error) {
         console.log(error);
+        mostrarAviso("No se pudo conectar con la API.", "danger");
     }
 }
 
@@ -95,12 +190,54 @@ async function eliminarProducto(id_producto){
         });
 
         if(respuesta.ok){
-            await cargarProductos();
+            const refrescoOk = await cargarProductos();
+            if (refrescoOk) {
+                mostrarAviso("Producto eliminado.", "success");
+            } else {
+                mostrarAviso("Producto eliminado, pero no se pudo actualizar la lista.", "info");
+            }
         } else {
-            console.error("Hubo algo malo al eliminar");
+            const data = await respuesta.json().catch(() => ({}));
+            if (respuesta.status === 429) {
+                mostrarAviso("Demasiadas peticiones. Espera un momento antes de continuar.", "warning");
+            } else {
+                mostrarAviso("No se pudo eliminar: " + (data.detail || "error desconocido"), "danger");
+            }
         }
     } catch (error) {
         console.log(error);
+        mostrarAviso("No se pudo conectar con la API.", "danger");
+    }
+}
+
+
+// 4. Función para Comprar Producto (POST)
+async function comprarProducto(id_producto){
+    try {
+        const respuesta = await fetch(API_URL + "/" + id_producto, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"}
+        });
+
+        if(respuesta.ok){
+            const refrescoOk = await cargarProductos();
+            if (refrescoOk) {
+                mostrarAviso("Producto comprado correctamente.", "success");
+            } else {
+                mostrarAviso("Compra realizada, pero no se pudo actualizar la lista. Reintenta en un momento.", "info");
+            }
+        } else {
+            // Muestra el motivo del rechazo (sin stock, id inexistente o 429)
+            const data = await respuesta.json().catch(() => ({}));
+            if (respuesta.status === 429) {
+                mostrarAviso("Demasiadas peticiones. Espera un momento antes de continuar.", "warning");
+            } else {
+                mostrarAviso("No se pudo comprar: " + (data.detail || "error desconocido"), "danger");
+            }
+        }
+    } catch (error) {
+        console.log(error);
+        mostrarAviso("No se pudo conectar con la API.", "danger");
     }
 }
 
