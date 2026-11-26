@@ -4,3 +4,11 @@ __pycache__/
 # Archivos temporales de escritura 
 *.tmp
 *.tmp.*
+
+# Datos masivos del Proyecto 4 
+*.parquet
+ventas.parquet
+ventas.parquet.tmp
+
+# Estado del contador de ventas
+.id_venta_seq

@@ -12,9 +12,11 @@ const totalProductos = document.getElementById("totalProductos");
 let chartProductos = null;
 let chartDistribucion = null;
 
-// Helper de formato monetario
-const fmtMoney = (n) => "$" + (Number.isFinite(Number(n)) ? Number(n) : 0).toFixed(2);
-
+// Helper de formato monetario con separador de miles (comas)
+const fmtMoney = (n) => "$" + (Number.isFinite(Number(n)) ? Number(n) : 0).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+});
 
 // 0. Helper: muestra avisos flotantes sin romper la página
 function mostrarAviso(mensaje, tipo = "warning") {
@@ -155,7 +157,9 @@ async function cargarProductos() {
 // 1a. Carga y pinta las tarjetas KPI
 async function cargarKPIs() {
     try {
-        const r = await fetch(API_BASE + "/dashboard/kpis");
+        // ─── NUEVO endpoint Polars (Proyecto 4) ───
+        // Reemplaza a /dashboard/kpis; ahora procesa parquet + csv en paralelo
+        const r = await fetch(API_BASE + "/api/analisis/kpis");
         if (!r.ok) return;
         const d = await r.json();
         // Fallbacks ante NaN / null
@@ -166,9 +170,9 @@ async function cargarKPIs() {
         const ticket = Number(d && d.ticket_promedio) || 0;
 
         document.getElementById("kpiProducto").textContent = prod;
-        document.getElementById("kpiProductoUnidades").textContent = unid + " unidades";
+        document.getElementById("kpiProductoUnidades").textContent = unid.toLocaleString("en-US") + " unidades";
         document.getElementById("kpiIngresos").textContent = fmtMoney(ing);
-        document.getElementById("kpiTransacciones").textContent = trans;
+        document.getElementById("kpiTransacciones").textContent = trans.toLocaleString("en-US");
         document.getElementById("kpiTicket").textContent = fmtMoney(ticket);
     } catch (e) {
         console.error("Error al cargar KPIs:", e);
@@ -181,8 +185,9 @@ async function cargarGraficas() {
     let productos = [];
 
     try {
-        // Solo se necesita una fuente de datos: productos con sus ingresos
-        const rp = await fetch(API_BASE + "/dashboard/ventas-por-producto");
+        // ─── NUEVO endpoint Polars (Proyecto 4) ───
+        // Reemplaza a /dashboard/ventas-por-producto; lee parquet + csv con Polars
+        const rp = await fetch(API_BASE + "/api/analisis/mas-vendidos");
         if (rp.ok) productos = await rp.json();
     } catch (e) {
         console.error("Error al cargar gráficas:", e);
@@ -287,7 +292,8 @@ async function cargarGraficas() {
                                 }
                                 const val = Number(ctx.parsed) || 0;
                                 const pct = (val / totalDist * 100).toFixed(1);
-                                return `${ctx.label}: $${val.toFixed(2)} (${pct}%)`;
+                                const valFmt = val.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                                return `${ctx.label}: $${valFmt} (${pct}%)`;
                             }
                         }
                     }
